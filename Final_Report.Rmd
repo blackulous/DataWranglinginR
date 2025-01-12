@@ -1,0 +1,645 @@
+---
+title: "Final Report"
+author: "Patience Heath, Amna Dar, Sanjida Rashid" 
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-12-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(maps)
+library(sf)
+library(patchwork)
+library(scales)
+library(pracma)
+library(plotly)
+library(viridis)
+```
+
+
+```{r read in, echo = TRUE}
+foia_data = read.csv("foia_data.csv")
+asm_data = read.csv("asm_data.csv")
+asm_relative_error = read.csv("asm_relative_error.csv")
+```
+
+# Part 1: FOIA & ASM Merged Data 
+First we are going to rename the Geographic Area Name to State in the asm data.
+We also want to replace the full name of the states with their abbreviations. 
+For example *Alabama* with *AL*
+
+```{r asm mutate state, echo = TRUE}
+asm_data = asm_data %>% rename(State = "Geographic_Area_Name") 
+asm_data = asm_data %>%
+  mutate(State = case_when(
+    str_detect(State, "Alabama") ~ "AL",
+    str_detect(State, "Alaska") ~ "AK",
+    str_detect(State, "Arizona") ~ "AZ",
+    str_detect(State, "Arkansas") ~ "AR",
+    str_detect(State, "California") ~ "CA",
+    str_detect(State, "Colorado") ~ "CO",
+    str_detect(State, "Connecticut") ~ "CT",
+    str_detect(State, "Delaware") ~ "DE",
+    str_detect(State, "Florida") ~ "FL",
+    str_detect(State, "Georgia") ~ "GA",
+    str_detect(State, "Hawaii") ~ "HI",
+    str_detect(State, "Idaho") ~ "ID",
+    str_detect(State, "Illinois") ~ "IL",
+    str_detect(State, "Indiana") ~ "IN",
+    str_detect(State, "Iowa") ~ "IA",
+    str_detect(State, "Kansas") ~ "KS",
+    str_detect(State, "Kentucky") ~ "KY",
+    str_detect(State, "Louisiana") ~ "LA",
+    str_detect(State, "Maine") ~ "ME",
+    str_detect(State, "Maryland") ~ "MD",
+    str_detect(State, "Massachusetts") ~ "MA",
+    str_detect(State, "Michigan") ~ "MI",
+    str_detect(State, "Minnesota") ~ "MN",
+    str_detect(State, "Mississippi") ~ "MS",
+    str_detect(State, "Missouri") ~ "MO",
+    str_detect(State, "Montana") ~ "MT",
+    str_detect(State, "Nebraska") ~ "NE",
+    str_detect(State, "Nevada") ~ "NV",
+    str_detect(State, "New Hampshire") ~ "NH",
+    str_detect(State, "New Jersey") ~ "NJ",
+    str_detect(State, "New Mexico") ~ "NM",
+    str_detect(State, "New York") ~ "NY",
+    str_detect(State, "North Carolina") ~ "NC",
+    str_detect(State, "North Dakota") ~ "ND",
+    str_detect(State, "Ohio") ~ "OH",
+    str_detect(State, "Oklahoma") ~ "OK",
+    str_detect(State, "Oregon") ~ "OR",
+    str_detect(State, "Pennsylvania") ~ "PA",
+    str_detect(State, "Rhode Island") ~ "RI",
+    str_detect(State, "South Carolina") ~ "SC",
+    str_detect(State, "South Dakota") ~ "SD",
+    str_detect(State, "Tennessee") ~ "TN",
+    str_detect(State, "Texas") ~ "TX",
+    str_detect(State, "Utah") ~ "UT",
+    str_detect(State, "Vermont") ~ "VT",
+    str_detect(State, "Virginia") ~ "VA",
+    str_detect(State, "Washington") ~ "WA",
+    str_detect(State, "West Virginia") ~ "WV",
+    str_detect(State, "Wisconsin") ~ "WI",
+    str_detect(State, "Wyoming") ~ "WY",
+    str_detect(State, "District of Columbia") ~ "DC",
+    TRUE ~ State 
+  ))
+unique(asm_data$State)
+```
+
+We are going to group the foia data by NaicsIndustry, BorrState and Approval
+Fiscal Year to only include the years in the asm dataset (2018,2019,2020,2021)
+We are going to filter out PR and GU and do some summarizing on the 50 states.
+
+We also renamed the borrstate column to State and approval fiscal year to year.
+This is to ensure the left-join works as intended.
+
+```{r filter foia for merge with asm, echo = TRUE}
+test = foia_data %>% group_by(NaicsIndustry, BorrState,ApprovalFiscalYear) %>% 
+  filter(!(BorrState == "PR" | BorrState == "GU")) %>%
+  filter(ApprovalFiscalYear == 2018 | ApprovalFiscalYear == 2019 | ApprovalFiscalYear == 2020 |
+           ApprovalFiscalYear == 2021) %>%
+  filter(NaicsIndustry == "Manufacturing") %>% summarize(sum_gross_approval = sum(GrossApproval),
+                                                         sum_jobs_supported = sum(JobsSupported),
+                                                         sum_third_party_dollars = sum(ThirdPartyDollars)
+                                                         ) %>%
+  rename(State = "BorrState",
+         Year = "ApprovalFiscalYear")
+```
+
+Now we are going to do a left join, joining by state and year.
+We are going to drop the naics description since they are all from the 
+manufacturing industry.
+
+```{r asm foia joined, echo = TRUE}
+asm_foia_merge = left_join(asm_data,test, by = c("State", "Year"))
+asm_foia_merge = asm_foia_merge %>% select(-NAICS_Description, -NaicsIndustry)
+head(asm_foia_merge)
+```
+
+Filtering to see what states most of the NA values are in 
+We see that they are in Arkansas, Delaware, DC, Mississippi,Montana and Wyoming
+we are just going to drop these values. Since multiple columns are missing values.
+
+```{r asm foia joined addressing NAs, echo = TRUE}
+asm_foia_merge %>% filter(is.na(sum_gross_approval) | is.na(sum_jobs_supported))
+asm_foia_merge = asm_foia_merge %>% filter(!(is.na(sum_gross_approval) | is.na(sum_jobs_supported)))
+asm_foia_merge %>% summarize_all(~ sum(is.na(.)))
+```
+
+#Graphs for the asm and foia joined dataset
+
+First we are going to make a graph on the sum of jobs supported by each state.
+We are going to separate by year, and make separate graphs for each of the years
+so we can see how, over time, how these loans are supporting jobs in the 
+manufacturing industry for each respective state.
+
+```{r states graph setup, echo = TRUE}
+states = map("state", plot = FALSE, fill = TRUE)
+state_sf = st_as_sf(states) %>% mutate(state = tolower(ID))
+asm_foia_merge = asm_foia_merge %>% rename(states = "State")
+
+state_sf = state_sf %>%
+  mutate(ID = case_when(
+    str_detect(ID, "alabama") ~ "AL",
+    str_detect(ID, "alaska") ~ "AK",
+    str_detect(ID, "arizona") ~ "AZ",
+    str_detect(ID, "arkansas") ~ "AR",
+    str_detect(ID, "california") ~ "CA",
+    str_detect(ID, "colorado") ~ "CO",
+    str_detect(ID, "connecticut") ~ "CT",
+    str_detect(ID, "delaware") ~ "DE",
+    str_detect(ID, "florida") ~ "FL",
+    str_detect(ID, "georgia") ~ "GA",
+    str_detect(ID, "hawaii") ~ "HI",
+    str_detect(ID, "idaho") ~ "ID",
+    str_detect(ID, "illinois") ~ "IL",
+    str_detect(ID, "indiana") ~ "IN",
+    str_detect(ID, "iowa") ~ "IA",
+    str_detect(ID, "kansas") ~ "KS",
+    str_detect(ID, "kentucky") ~ "KY",
+    str_detect(ID, "louisiana") ~ "LA",
+    str_detect(ID, "maine") ~ "ME",
+    str_detect(ID, "maryland") ~ "MD",
+    str_detect(ID, "massachusetts") ~ "MA",
+    str_detect(ID, "michigan") ~ "MI",
+    str_detect(ID, "minnesota") ~ "MN",
+    str_detect(ID, "mississippi") ~ "MS",
+    str_detect(ID, "missouri") ~ "MO",
+    str_detect(ID, "montana") ~ "MT",
+    str_detect(ID, "nebraska") ~ "NE",
+    str_detect(ID, "nevada") ~ "NV",
+    str_detect(ID, "new hampshire") ~ "NH",
+    str_detect(ID, "new jersey") ~ "NJ",
+    str_detect(ID, "new mexico") ~ "NM",
+    str_detect(ID, "new york") ~ "NY",
+    str_detect(ID, "north carolina") ~ "NC",
+    str_detect(ID, "north dakota") ~ "ND",
+    str_detect(ID, "ohio") ~ "OH",
+    str_detect(ID, "oklahoma") ~ "OK",
+    str_detect(ID, "oregon") ~ "OR",
+    str_detect(ID, "pennsylvania") ~ "PA",
+    str_detect(ID, "rhode island") ~ "RI",
+    str_detect(ID, "south carolina") ~ "SC",
+    str_detect(ID, "south dakota") ~ "SD",
+    str_detect(ID, "tennessee") ~ "TN",
+    str_detect(ID, "texas") ~ "TX",
+    str_detect(ID, "utah") ~ "UT",
+    str_detect(ID, "vermont") ~ "VT",
+    str_detect(ID, "virginia") ~ "VA",
+    str_detect(ID, "washington") ~ "WA",
+    str_detect(ID, "west virginia") ~ "WV",
+    str_detect(ID, "wisconsin") ~ "WI",
+    str_detect(ID, "wyoming") ~ "WY",
+    str_detect(ID, "district of columbia") ~ "DC",
+    TRUE ~ ID 
+  )) %>%
+  rename(states = "ID")
+
+map_plot= state_sf %>% left_join(asm_foia_merge, by = "states")
+```
+
+```{r filter map plots by year, echo = TRUE}
+map_plot_2018 = map_plot %>% filter(Year == 2018)
+map_plot_2019 = map_plot %>% filter(Year == 2019)
+map_plot_2020 = map_plot %>% filter(Year == 2020)
+map_plot_2021 = map_plot %>% filter(Year == 2021)
+```
+
+California consistently has the most jobs supported throughout the years. The
+explanation of this could be due to the fact that California has the highest GDP.
+https://en.wikipedia.org/wiki/List_of_U.S._states_and_territories_by_GDP 
+
+**Texas also consistently has been supporting a good amount of jobs throughout**
+**the years**
+
+**Also, in 2021 across the US there were more jobs being supported compared to** 
+**previous years**
+
+```{r map graphs on sum jobs supported by year, echo = TRUE}
+map_plot_2018 %>% ggplot(aes(fill = sum_jobs_supported)) +
+ geom_sf(colour = NA) +
+ scale_fill_gradient(low="white", high="red", na.value = "grey" ) +
+ ggtitle("Jobs supported in 2018") +
+ coord_sf(datum = NA,
+          xlim = c(-125, -65), 
+          ylim = c(24, 50)) +
+  theme_minimal() +
+   labs(fill = "Sum of Jobs Supported")
+  
+map_plot_2019 %>% ggplot(aes(fill = sum_jobs_supported)) +
+ geom_sf(colour = NA) +
+ scale_fill_gradient(low="white", high="red", na.value = "grey" ) +
+ ggtitle("Jobs supported in 2019") +
+ coord_sf(datum = NA,
+          xlim = c(-125, -65), 
+          ylim = c(24, 50)) +
+  theme_minimal() +
+   labs(fill = "Sum of Jobs Supported")
+
+ map_plot_2020 %>% ggplot(aes(fill = sum_jobs_supported)) +
+ geom_sf(colour = NA) +
+ scale_fill_gradient(low="white", high="red", na.value = "grey" ) +
+ ggtitle("Jobs supported in 2020") +
+ coord_sf(datum = NA,
+          xlim = c(-125, -65), 
+          ylim = c(24, 50)) +
+  theme_minimal() +
+   labs(fill = "Sum of Jobs Supported")
+
+ map_plot_2021 %>% ggplot(aes(fill = sum_jobs_supported)) +
+ geom_sf(colour = NA) +
+ scale_fill_gradient(low="white", high="red", na.value = "grey" ) +
+ ggtitle("Jobs supported in 2021") +
+ coord_sf(datum = NA,
+          xlim = c(-125, -65), 
+          ylim = c(24, 50)) +
+  theme_minimal() +
+   labs(fill = "Sum of Jobs Supported")
+```
+##Some other questions we can want to investigate
+
+**Is there a relationship between Total Fringe Benefits and the amount of jobs**
+**supported?**
+
+**What Regions have the highest Total Fringe Benefits?**
+
+We are going to add another column named region and group the states by region.
+
+```{r asm_foia joined dataset region column, echo = TRUE}
+asm_foia_merge = asm_foia_merge %>% mutate(
+    region = case_when(
+      states %in% c("ME", "VT", "NH", "MA", "CT", "RI", "NY", "NJ", "PA") ~ "Northeast",
+      states %in% c("OH", "IN", "IL", "MI", "WI", "MN", "IA", "MO", "ND", "SD", "NE", "KS") ~ "Midwest",
+      states %in% c("DE", "MD", "WV", "VA", "KY", "NC", "SC", "GA", "FL", "AL", "MS", "TN", "AR", "LA") ~ "South",
+      states %in% c("TX", "OK", "NM", "AZ") ~ "Southwest",
+      states %in% c("CA", "NV", "OR", "WA", "AK", "HI", "UT", "CO", "MT", "WY", "ID") ~ "West",
+      TRUE ~ "Unknown"
+    )
+  )
+```
+
+We first want to look at the distribution of Total Fringe Benefits to see if the
+data is skewed a particular way. 
+
+```{r total fringe distribution, echo = TRUE}
+asm_foia_merge %>%
+  ggplot(aes(x = Total_Fringe_Benefits)) +
+  geom_histogram(fill = "salmon", color = "black" , bins = 30) +
+  labs(title = "Distribution of Total Fringe Benefits") +
+  theme_minimal() +
+  xlab("Total Fringe Benefits")
+```
+
+Knowing the data is heavily right skewed we are just going to log the total 
+fringe benefits so that we can see the relative differences between regions.
+
+```{r boxplot total fringe benefits by region, echo = TRUE}
+asm_foia_merge %>% ggplot(aes(x = region , y = log(Total_Fringe_Benefits), fill = region)) +
+  geom_boxplot() +
+  ylab("Log of Total Fringe Benefits") +
+  ggtitle("Total Fringe Benefits by Region") +
+  theme_minimal()
+  
+  
+```
+
+According to the box plot abovethe **west** has the **widest range** of fringe 
+benefits, this shows that there is more variability and tells us that the
+benefits vary greatly in this region.The **Midwest** has the 
+**highest median of total fringe benefits** which tells us employees in the midwest
+are more likely to receive more benefits than other regions.The **South** has 
+the **least variability** in fringe benefits which tells us that these benefits 
+are consistent in the region. 
+
+
+##We also want to see how the average fringe benefits change overtime.
+
+According to the graph the midwest and west follow a similar trend with Fringe
+benefits decreasing from 2018 hitting its lowest in 2020. Then increasing
+in 2021.
+
+The northeast, southeast and south all follow a similar trend as well in fringe 
+benefits. With Fringe benefits slightly increasing from 2018 to 2019, then 
+decreasing in 2020 to then increasing in 2021.
+
+```{r interactive fringe benefits graph by region and year, echo = TRUE}
+summary = asm_foia_merge %>% group_by(region,Year) %>% summarize(avg_fringe_benefits = 
+                                                                    mean(Total_Fringe_Benefits))
+plot_ly(data = summary, x = ~Year, y = ~avg_fringe_benefits, color = ~Year, 
+        frame = ~region, type = "scatter", mode = "lines+markers")
+```
+
+
+
+# Part 2: FOIA Individual Data 
+### This part of the report analyzes FOIA data, focusing on loans in the manufacturing industry. 
+
+The first step is filtering the data to focus on the manufacturing industry and selecting relevant columns.  
+
+```{r filtering foia data by manufacturing industry, echo = TRUE}
+manufacturing <- foia_data %>%
+  filter(NaicsIndustry == "Manufacturing") %>%
+  select(
+    ApprovalFiscalYear, ProjectState, TermInMonths, 
+    GrossApproval, JobsSupported, GrossChargeOffAmount
+  )
+
+manufacturing <- manufacturing %>%
+  filter(
+    !is.na(GrossApproval),
+    !is.na(JobsSupported),
+    !is.na(TermInMonths),
+    !is.na(ProjectState)
+  )
+
+glimpse(manufacturing)
+```
+
+## Trends in Loan Metrics  
+
+To analyze loan trends, the data is grouped by fiscal year.
+We calculate the total gross approval and average loan term for each year, to 
+create a line graph of loan trends over the years. 
+
+We will rescale the total loan amount to millions to make the values easier to 
+interpret. 
+
+```{r setup and graph for loan metrics over time, echo = TRUE}
+loan_summary <- manufacturing %>%
+  group_by(ApprovalFiscalYear) %>%
+  summarize(
+    TotalGrossApproval = sum(GrossApproval, na.rm = TRUE),  
+    AvgTermInMonths = mean(TermInMonths, na.rm = TRUE)  
+  ) %>%
+  mutate(
+    peaks_gross = TotalGrossApproval %in% findpeaks(TotalGrossApproval, sortstr = TRUE)[, 1]
+  )
+
+ggplot(loan_summary, aes(x = ApprovalFiscalYear)) +
+  geom_line(aes(y = TotalGrossApproval / 1e6, color = "Total Loan Amount (in Millions)"), size = 1.2) +
+  geom_line(aes(y = AvgTermInMonths, color = "Average Loan Term (in Months)"), size = 1.2, linetype = "dashed") +
+  geom_point(aes(y = AvgTermInMonths), size = 2, color = "darkblue") + 
+  geom_point(data = subset(loan_summary, peaks_gross), aes(y = TotalGrossApproval / 1e6), 
+             size = 3, color = "orange", shape = 16) + 
+  geom_vline(xintercept = 2020, linetype = "dotted", color = "red") +  
+  annotate("text", x = 2020, y = max(loan_summary$AvgTermInMonths) + 275, 
+           label = "COVID-19 Impact", hjust = -0.1, color = "red", size = 4) +
+  labs(
+    title = "Trends in Manufacturing Loans Over Time (2010-2024)",
+    x = "Approval Year",
+    y = "Average Loan Term (in Months)",
+    color = "Loan Metrics"
+  ) +
+  scale_y_continuous(
+    name = "Average Loan Term (in Months)",
+    sec.axis = sec_axis(~ . * 1e6, name = "Total Loan Amount (in Millions)")
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(),
+    legend.position = "top",
+    legend.title = element_text(),
+    legend.text = element_text(),
+    axis.title = element_text(),
+    axis.text = element_text()
+  )
+```
+
+### The graph above shows trends in total loan amounts and average loan terms over time, with peaks highlighted and 2020 marked for the COVID-19 impact. As we can see, the highest peak in total loan amount was in 2021, which aligns with the aftermath of the COVID-19 pandemic. This increase was probably due to recovery programs and increased borrowing to help manufacturing businesses stay afloat during this hard time.
+
+
+## Regional Analysis of Loans
+
+For our next visual, we grouped states into regions to avoid overcrowding and 
+analyze average loan amounts and jobs supported more clearly.
+
+```{r region mutations, echo = TRUE}
+manufacturing <- manufacturing %>%
+  mutate(
+    Region = case_when(
+      ProjectState %in% c("ME", "NH", "VT", "MA", "RI", "CT", "NY", "PA", "NJ") ~ "Northeast",
+      ProjectState %in% c("OH", "IN", "IL", "MI", "WI", "MN", "IA", "MO", "ND", "SD", "NE", "KS") ~ "Midwest",
+      ProjectState %in% c("DE", "MD", "WV", "VA", "KY", "TN", "NC", "SC", "GA", "FL", "AL", "MS", "AR", "LA", "TX", "OK") ~ "South",
+      ProjectState %in% c("AZ", "NM", "MT", "ID", "WY", "CO", "UT", "NV", "CA", "OR", "WA", "AK", "HI") ~ "West",
+      ProjectState %in% c("PR", "GU", "DC") ~ "Territories",
+      TRUE ~ "Unknown" 
+    )
+  )
+
+regions <- manufacturing %>%
+  group_by(Region) %>%
+  summarize(
+    AvgGrossApproval = mean(GrossApproval, na.rm = TRUE),  
+    AvgJobsSupported = mean(JobsSupported, na.rm = TRUE),        
+    .groups = "drop"
+  )
+```
+
+To make the average loan amounts easier to compare across regions, 
+we rescaled them to a log scale, which helps show differences more clearly.
+
+```{r avg gross approval vs avg jobs supported by region graph , echo = TRUE}
+ggplot(regions, aes(x = AvgGrossApproval, y = AvgJobsSupported, color = Region)) +
+  geom_point(size = 7) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") + 
+  scale_x_log10(  
+    labels = scales::comma,  
+    name = "Average Loan Amount (Log Scale)"
+  ) +
+  scale_color_viridis_d(option = "turbo", name = "Region") +
+  labs(
+    title = "Average Loan Amount (Log Scale) vs. Jobs Supported by Region",
+    y = "Average Jobs Supported",
+    color = "Region"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(),
+    axis.text = element_text(),
+    legend.position = "right",
+    legend.title = element_text(),
+    legend.text = element_text()
+  )
+```
+
+### The scatter plot above shows the relationship between average loan amounts (on a log scale) and average jobs supported for different regions. The South and West have higher average loan amounts, which might mean larger businesses or bigger funding needs. Territories, even with smaller loans, support more jobs on average, likely due to smaller businesses needing more workers. 
+
+
+## Charge-Off Data Analysis
+
+For our last visual in this part, we are analyzing and visualizing the 
+total charge-off amounts by state, rescaled to millions for easier interpretation.
+
+```{r charge-off set up, echo = TRUE}
+chargeoff <- manufacturing %>%
+  group_by(ProjectState) %>%
+  summarize(
+    TotalChargedOff = sum(GrossChargeOffAmount, na.rm = TRUE) / 1e6  
+  )
+
+us_states <- map_data("state")
+
+state_names <- tibble(
+  state = tolower(state.name),
+  abbrev = state.abb
+)
+
+map_merged <- us_states %>%
+  left_join(state_names, by = c("region" = "state")) %>%
+  left_join(chargeoff, by = c("abbrev" = "ProjectState"))
+
+states <- map_merged %>%
+  group_by(region, abbrev) %>%
+  summarize(
+    long = mean(range(long)),
+    lat = mean(range(lat)),
+    TotalChargedOff = mean(TotalChargedOff, na.rm = TRUE), 
+    .groups = "drop"
+  )
+```
+
+We are going to highlight states with significant charge-off amounts using a 
+color gradient, where lighter shades represent lower amounts and darker shades 
+indicate higher amounts. This gradient will help emphasize the states with the 
+highest loan charge-offs.
+
+```{r interactive map of charge-off amounts by state , echo = TRUE}
+map_chargeoff <- ggplot(map_merged, aes(long, lat, group = group, fill = TotalChargedOff, text = paste(
+  "State: ", str_to_title(region), "<br>","Total Charge-Off: ", round(TotalChargedOff, 3)))) +
+  geom_polygon(color = "white") +
+  scale_fill_gradient(
+    low = "lightblue", high = "darkblue", name = "Charge-Off (in Millions)", na.value = "gray90"
+  ) +
+  labs(
+    title = "Loan Charge-Off Amounts by State",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "right",
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  )
+
+ggplotly(map_chargeoff, tooltip = "text")
+```
+
+### The map above shows that California, New York, and Illinois have the highest charge-off amounts, highlighted by the darkest colors. This is likely because these states have larger economies and more loans, so when businesses face challenges, the total charge-offs tend to be higher.
+
+
+
+# Part 3: ASM Individual Data 
+
+Let's start by trying to create a map of the Total Capital Expenditures by Each 
+State and year. In order to do this we have to first prepare the US States Map to recognize the abbreviations. Next, we have to summarize the data bu the state and year. 
+
+```{r interavtive map summarizing the data and grouping by variables, echo = TRUE}
+
+
+us_states <- map_data("state") %>%
+  left_join(data.frame(
+    state_full = tolower(state.name),
+    State = state.abb
+  ), by = c("region" = "state_full"))
+
+asm_summary <- asm_data %>%
+  group_by(State, Year) %>%
+  summarise(total_expenditures = sum(Total_Capital_Expenditures, na.rm = TRUE))
+
+```
+
+Next, lets merge the map data with the States and create the map and filter out any NA values. 
+
+```{r interactive map joining the data and filtering out NA values, echo = TRUE}
+
+map_data <- us_states %>%
+  left_join(asm_summary, by = "State")
+
+map_data_filtered <- map_data %>%
+  filter(!is.na(total_expenditures))
+```
+
+Finally, let's generate an interactive  map of total capital expenditure by state and year. 
+
+```{r FINAL interactive map of total capital expenditure by state and year. , echo = TRUE}
+
+p <- ggplot(map_data_filtered, aes(long, lat, group = group, fill = total_expenditures, text = paste("State:", State, "<br>Expenditures:", total_expenditures))) +
+  geom_polygon(color = "white") +
+  coord_fixed(1.3) +
+  scale_fill_viridis(option = "plasma", name = "Capital Expenditures") +
+  theme_minimal() +
+  labs(title = "Total Capital Expenditures by State and Year",
+       caption = "Source: ASM Data") +
+  facet_wrap(~ Year)
+
+ggplotly(p, tooltip = "text")
+```
+
+##The interactive map above shows the states that have the highest level of Total Capital Expenditures each year. The Capital Expenditure shows how much a company invests in existing and new fixed assets to maintain or grow its business. Clearly, we see that Texa and California have the highest amount of Capital Expenditures which makes sense because they are the largeset states will allows them to access to a large population workforce. Additionally, they have favroable business regulations that allow for people to startmanufacturing there. 
+
+Let's see if there is a relationship between the total fringe benefits that employees recieve and the total capital expenditures for that year. First let's pick which variables to include
+
+```{r scatterplot comparing total capital expednitures vs total fringe benefits per year, echo = TRUE}
+relationship_data <- asm_data %>%
+  select(Total_Fringe_Benefits, Total_Capital_Expenditures, Year) %>%
+  drop_na()
+
+ggplot(relationship_data, aes(
+  x = Total_Capital_Expenditures,
+  y = Total_Fringe_Benefits 
+)) +
+  geom_point(alpha = 0.7, color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") + 
+  facet_wrap(~ Year)
+  labs(
+    title = "Relationship Between Fringe Benefits and Capital Expenditures",
+    x = "Total Capital Expenditures",
+    y = "Total Fringe Benefits"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+##The graph above was used to show if the total capital expenditures have any effect on the total fringe benefits, which are benefits employees recieve from their employers. In the graph, it looks like as the total capital expenditure increases so does the amount of total fringe benefits for the most part. 
+
+We are going to look at which states and which year had the highest material cost based on the state.
+
+```{r bar plot of which capital expenditures by industry per year, echo = TRUE}
+industry_data_long <- asm_data %>%
+  pivot_longer(cols = starts_with("Capital"),  
+               names_to = "Industry", 
+               values_to = "Expenditures")  
+
+industry_summary <- industry_data_long %>%
+  group_by(Industry, Year) %>%
+  summarise(total_expenditures = sum(Expenditures, na.rm = TRUE))
+
+ggplot(industry_summary, aes(x = Year, y = total_expenditures, fill = Industry)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d(option = "plasma", name = "Industry") +
+  theme_minimal() +
+  labs(title = "Total Capital Expenditures by Industry Across Years",
+       x = "Year",
+       y = "Total Capital Expenditures",
+       caption = "Source: ASM Data") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## The bar graph above shows the total capital expenditures per year based on the industry. We see that the higest capital investments are machinery and other. We know that machinery for heavy manufacturing is essential but we don't have an insight as to what other capital expenses are made in the other category. 
+
