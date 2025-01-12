@@ -1,0 +1,495 @@
+---
+title: "Initial Analysis"
+output: html_document
+date: "2024-11-25"
+---
+
+## This file includes all the data cleaning  
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(dplyr)
+```
+
+
+## FOIA DATASET CLEANING
+
+```{r foia data read in, echo = TRUE}
+foia_data = read.csv("foia-504-fy2010-present-asof-240930.csv")
+glimpse(foia_data)
+```
+
+The *As of Date* is the date that all of the data was recorded we are going to 
+remove this row because it has no use. There is only one unique date.
+
+```{r unique dates in foia , echo = TRUE}
+unique(foia_data$AsOfDate)
+foia_data = foia_data %>% select(-AsOfDate)
+```
+
+All business in the dataset are *504 small business* so this column can be removed
+as well.
+
+```{r unique programs in foia, echo = TRUE}
+unique(foia_data$Program)
+foia_data = foia_data %>% select(-Program)
+```
+
+```{r, echo = TRUE}
+head(foia_data)
+```
+First we are going to take a look at the lender variables which are BorrName,
+BorrStreet..., CDC_Name, CDC_Street.... , ThridPartyLender_Name....
+
+Checking for missing values in the foia dataset but focusing in on the lender
+information
+
+```{r summarize NAs in foia, echo = TRUE}
+foia_data %>% summarize_all(~ sum(is.na(.) | . == ""))
+```
+Majority of the observations that have missing values for Third Party Lender
+have no missing values for CDC. This checks out as this dataset is from the
+official SBA page.
+
+We are going to get rid of the values that have no information on the name,
+city and state.
+
+```{r filter NA for city and state FOIA, echo = TRUE}
+
+
+foia_data = foia_data %>% filter(!(ThirdPartyLender_Name == "" &
+                              ThirdPartyLender_City == "" &
+                              ThirdPartyLender_State == ""))
+
+foia_data = foia_data %>% filter(!(CDC_Name == ""))
+
+```
+
+Values with information on the Name can be found using another
+dataset https://www.fdic.gov/ - includes information on all FDIC supported banks
+including their name, city and state among other things..
+The locations dataset has location information from all public banks.
+We are going to utilize this dataset to find missing city and state information.
+
+The name data is in title case so we are going to change the thirdpartylenders
+names to title case.
+
+We are also going to rename the lender_location NAME column to ThirdPartyLender_Name
+so that we can do the left join.
+
+```{r lender location join, echo = TRUE}
+lender_location = read_csv("locations.csv", show_col_types = FALSE)
+head(lender_location, n = 3)
+foia_data = foia_data %>% mutate(ThirdPartyLender_Name = 
+                              str_to_title(foia_data$ThirdPartyLender_Name))
+lender_location = lender_location %>% rename(ThirdPartyLender_Name = "NAME")
+
+```
+
+Trying to resolve duplicates in both datasets and duplicate lender_location.
+We want to make sure there are only unique values.
+Then, performing a left join to merge city and state information into 
+foia_data_lender based on ThirdPartyLender_Name.
+
+```{r foia and lender location duplicates, echo = TRUE}
+foia_duplicates <- foia_data %>%
+  count(ThirdPartyLender_Name) %>%
+  filter(n > 1)
+head(foia_duplicates,5)
+
+location_duplicates <- lender_location %>%
+  count(ThirdPartyLender_Name) %>%
+  filter(n > 1)
+
+
+lender_location <- lender_location %>%
+  group_by(ThirdPartyLender_Name) %>%
+  slice(1) %>%
+  ungroup()
+
+foia_data <- foia_data %>%
+  left_join(lender_location, by = "ThirdPartyLender_Name") %>%
+  select(names(foia_data)) #selecting only the columns from foia_data_lender
+#the other dataset doesn't matter
+
+foia_data <- foia_data %>%
+  mutate(
+    ThirdPartyLender_City = if_else(
+      is.na(ThirdPartyLender_City) | ThirdPartyLender_City == "",
+      "Unknown",  
+      ThirdPartyLender_City
+    ),
+    ThirdPartyLender_State = if_else(
+      is.na(ThirdPartyLender_State) | ThirdPartyLender_State == "",
+      "Unknown", 
+      ThirdPartyLender_State
+    )
+  )
+```
+We reduced the amount of missing values from 192 and 197 to 22 and 27.
+We are just going to omit the rest of the missing values due to time. But 
+some strategies to figure out the rest of the missing values would be:
+
+1. look up manually the city and state based on the thirdpartylender name 
+2. Find another dataset that includes other banks.
+
+There are 106583 observations, so omitting 27 observations won't make any 
+significant changes to our analysis.
+We are now left with 106556 observations.
+
+```{r foia NA check third party lender, echo = TRUE}
+foia_data %>% summarize_all(~ sum(is.na(.) | . == "" | . == "Unknown"))
+foia_data = foia_data %>% filter(!(ThirdPartyLender_State == "" | 
+                              ThirdPartyLender_State == "Unknown" |
+                              ThirdPartyLender_City == ""| 
+                              ThirdPartyLender_City == "Unknown"))
+foia_data %>% summarize_all(~ sum(is.na(.) | . == "" | . == "Unknown"))
+dim(foia_data)
+```
+
+We have now successfully cleaned the lender portion of the data 
+Doing a final glimpse check to see if all the variables make sense.
+
+```{r final check of foia data, echo = TRUE}
+glimpse(foia_data)
+```
+
+Looking at this we see some inconsistencies with the casing.
+e.g. Mint Hill but New york. 
+
+There are some words in parentheses but we are going to keep everything and 
+just change the casing. If we need to focus on a specific city in analysis 
+we can just extract the city using a str_detect and regex.
+
+We ended up changing the Borrows Name, street and city to title case. 
+
+```{r str change BORR CITY foia , echo = TRUE}
+head(unique(foia_data$BorrCity),10)
+
+foia_data = foia_data %>%
+  mutate(BorrCity = str_to_title(foia_data$BorrCity),
+         BorrStreet = str_to_title(foia_data$BorrStreet),
+         BorrName = str_to_title(foia_data$BorrName))
+
+
+```
+
+
+## Loan information and industry part of the dataset (recipients of the loan)
+
+First look into missing values in the foia dataset.
+Here we can see that ChargeOffDate needs to be investigated
+
+```{r summarize NA foia data, echo = FALSE}
+foia_data %>% summarize_all(~ sum(is.na(.)))
+```
+
+
+Previously, we noticed that ChargeOffDate has a lot of NA's, so let's try to 
+clean that up.
+
+```{r charge off date removal, echo = TRUE}
+foia_data = foia_data %>%
+  mutate(ChargeOffDate = ifelse(is.na(ChargeOffDate), "Not Applicable", as.character(ChargeOffDate))) 
+```
+
+**FranchiseName** and **PaidInFullDate** have a lot of empty rows, 
+so let's replace those values with a placeholder to make it easier to 
+analyze the data.
+For missing values in CongressionalDistrict, we will replace them with 'Unknown.'
+
+```{r foia " " handling, echo = TRUE}
+foia_data = foia_data %>%
+  mutate(
+    FranchiseName = ifelse(FranchiseName == "", "Not Applicable", FranchiseName),
+    PaidInFullDate = ifelse(PaidInFullDate == "", "Not Applicable", PaidInFullDate),
+    CongressionalDistrict = ifelse(is.na(CongressionalDistrict), "Unknown", 
+                                   CongressionalDistrict)
+  )
+```
+
+Other than NAs, many variables have empty values as well that we need to 
+clean up. 
+
+```{r checking empty " ", echo = TRUE}
+foia_data %>% summarize_all(~ sum(is.na(.) | . == ""))
+```
+
+Unlike with FranchiseName and PaidInFullDate which specify in the description 
+of the variable that they apply only if applicable, these variables with empty 
+values above do not do that. But we do not want to simply remove these rows, 
+so we replace the empty values with 'Unknown' to remain consistent.
+
+```{r, echo = TRUE}
+foia_data <- foia_data %>%
+  mutate(
+    FirstDisbursementDate = ifelse(FirstDisbursementDate == "", "Unknown", 
+                                   FirstDisbursementDate),
+    NaicsDescription = ifelse(NaicsDescription == "", "Unknown", NaicsDescription),
+    FranchiseCode = ifelse(FranchiseCode == "", "Unknown", FranchiseCode),
+    ProjectCounty = ifelse(ProjectCounty == "", "Unknown", ProjectCounty),
+    CongressionalDistrict = ifelse(CongressionalDistrict == "", "Unknown", CongressionalDistrict),
+    BusinessAge = ifelse(BusinessAge == "", "Unknown", BusinessAge),
+    LoanStatus = ifelse(LoanStatus == "", "Unknown", LoanStatus)
+  )
+```
+
+Last thing we are going to do is make a column to match each particular industry
+by their NAICS code . Although there is a column called "NAICS Description" and 
+"BusinessType" these aren't descriptive at all and just give either the names of 
+the company (which isn't helpful for us), or a broad definition.
+
+- For NAICS classification we are only going to focus on the first two digits
+which gives us information on the sector. Not the specific sub-sector or industry
+group. https://www.naics.com/search/ is where I am getting information from 
+for this particular block of code.
+
+
+(for my first time around I got about 60,000 unknown observations
+then I realized that I forgot to do case_when statements for the right table 
+of industries on the website......)
+
+```{r, echo = TRUE}
+
+foia_data = foia_data %>% mutate(NaicsCode = as.character(NaicsCode)
+) %>% mutate(NaicsIndustry = case_when(
+  str_detect(NaicsCode, "^11\\d{4}$") ~ "Agriculture",
+  str_detect(NaicsCode, "^21\\d{4}$") ~ "Mining",
+  str_detect(NaicsCode, "^22\\d{4}$") ~ "Utilities",
+  str_detect(NaicsCode, "^23\\d{4}$") ~ "Construction",
+  str_detect(NaicsCode, "^3[1-3]\\d{4}$") ~ "Manufacturing",
+  str_detect(NaicsCode, "^42\\d{4}$") ~ "Wholesale Trade",
+  str_detect(NaicsCode, "^4[4-5]\\d{4}$")  ~ "Retail Trade",
+  str_detect(NaicsCode, "^4[8-9]\\d{4}$") ~ "Transportation and Warehousing",
+  str_detect(NaicsCode, "^51\\d{4}$")  ~ "Information",
+  str_detect(NaicsCode, "^52\\d{4}$") ~ "Finance and Insurance",
+  str_detect(NaicsCode, "^53\\d{4}$") ~ "Real Estate",
+  str_detect(NaicsCode, "^54\\d{4}$") ~ "Professional Services",
+  str_detect(NaicsCode, "^55\\d{4}$") ~ "Management of Companies",
+  str_detect(NaicsCode, "^56\\d{4}$") ~ "Administrative and Support Waste Services",
+  str_detect(NaicsCode, "^61\\d{4}$") ~ "Educational Services",
+  str_detect(NaicsCode, "^62\\d{4}$") ~ "Health Care and Social Assistance",
+  str_detect(NaicsCode, "^71\\d{4}$") ~ "Arts, Entertainment, and Recreation",
+  str_detect(NaicsCode, "^72\\d{4}$") ~ "Accommodation and Food services",
+  str_detect(NaicsCode, "^81\\d{4}$") ~ "Other services (except Public Adminstration)",
+  str_detect(NaicsCode, "^92\\d{4}$") ~ "Public Administration",
+  TRUE ~ "Unknown"
+))
+
+```
+
+
+Interesting enough we have some Naics Codes that have no description,
+no industry about 300 in total (Not printing them all).
+They all have the same NaicsCode of 0 which our assumption is the equivalence of 
+an NA value.
+
+```{r, echo = TRUE}
+foia_data %>% select(NaicsCode, NaicsDescription, NaicsIndustry) %>%
+  filter(NaicsIndustry == "Unknown") %>% slice_head(n = 5)
+```
+
+We are going to do some investigation into these missing values and see if there
+are any discrepancies.
+
+1. we are going to get rid of all observations where the franchiseCode and 
+Franchise Name are unavailable because there would be no way to find the 
+companies NAICS code (this step got rid of about 250 observations)
+2. We could find the NAICS code through an API but on search you have to pay for
+the service. So we are just going to omit these values.
+3. You could also manually look it up through the same website
+https://opencorporates.com/ but that would be tedious.
+
+```{r filter out unkowns for both naics and franchisecode, echo = TRUE}
+foia_data %>% filter(NaicsIndustry == "Unknown") %>% head(n = 5)
+
+foia_data = 
+  foia_data %>% filter(!(NaicsIndustry == "Unknown" & FranchiseCode == "Unknown"))
+
+foia_data = foia_data %>% filter(!(NaicsIndustry == "Unknown"))
+
+```
+
+Just a quick first glance we can see there are a lot of industries in this 
+dataset which is great!
+
+```{r industry in foia, echo = TRUE}
+foia_data %>% group_by(NaicsIndustry) %>% summarize(count = n())
+```
+
+Saving the new cleaned file as a csv.
+```{r foia cleaned file, echo = TRUE}
+write_csv(foia_data, "foia_data.csv")
+```
+
+
+
+
+## ASM DATA CLEANING
+
+```{r asm intial glimpse, echo = TRUE}
+ASM_data = read.csv("ASMAREA2017.AM1831BASIC03-2024-11-22T003727.csv")
+glimpse(ASM_data)
+```
+
+Let's check for any NAs in this dataset. 
+```{r asm na check, echo = TRUE}
+ASM_data %>%
+  summarize_all(~ sum(is.na(.)))
+```
+
+There are no NAs present, but the column names are too long and complicated, 
+so let us rename them.
+```{r asm column rename, echo = TRUE}
+ASM_data = ASM_data %>%
+  rename(
+    Geographic_Area_Name = Geographic.Area.Name..NAME.,
+    NAICS_Code = X2017.NAICS.code..NAICS2017.,
+    NAICS_Description = Meaning.of.NAICS.Code..NAICS2017_LABEL.,
+    Year = Year..YEAR.,
+    Total_Fringe_Benefits = Total.fringe.benefits...1.000...BENEFIT.,
+    Fringe_Benefits_Error = Relative.standard.error.for.estimate.of.total.fringe.benefits......BENEFIT_S.,
+    Total_Materials_Cost = Total.cost.of.materials...1.000...CSTMTOT.,
+    Materials_Cost_Error = Relative.standard.error.for.estimate.of.total.cost.of.materials.......CSTMTOT_S.,
+    Cost_Materials_Used = Cost.of.materials..packaging..etc..used...1.000...CSTMPRT.,
+    Materials_Used_Error = Relative.standard.error.for.estimate.of.cost.of.materials..packaging..etc..used.....CSTMPRT_S.,
+    Cost_Resales = Cost.of.resales...1.000...CSTRSL.,
+    Resales_Error = Relative.standard.error.for.estimate.of.cost.of.resales......CSTRSL_S.,
+    Cost_Fuels_Consumed = Cost.of.purchased.fuels.consumed...1.000...CSTFU.,
+    Fuels_Consumed_Error = Relative.standard.error.for.estimate.of.cost.of.purchased.fuels.consumed......CSTFU_S.,
+    Cost_Electricity = Cost.of.purchased.electricity...1.000...CSTELEC.,
+    Electricity_Error = Relative.standard.error.for.estimate.of.cost.of.purchased.electricity......CSTELEC_S.,
+    Cost_Contract_Work = Cost.of.contract.work...1.000...CSTCNT.,
+    Contract_Work_Error = Relative.standard.error.for.estimate.of.cost.of.contract.work......CSTCNT_S.,
+    Electricity_Purchased_kWh = Quantity.of.electricity.purchased.for.heat.and.power..1.000.kWh...ELECPCH.,
+    Electricity_Purchased_Error = Relative.standard.error.for.estimate.of.quantity.of.electricity.purchased.for.heat.and.power......ELECPCH_S.,
+    Electricity_Generated_kWh = Quantity.of.generated.electricity..1.000.kWh...ELECGEN.,
+    Electricity_Generated_Error = Relative.standard.error.for.estimate.of.quantity.of.generated.electricity......ELECGEN_S.,
+    Electricity_Sold_kWh = Quantity.of.electricity.sold.or.transferred..1.000.kWh...ELECSLD.,
+    Electricity_Sold_Error = Relative.standard.error.for.estimate.of.quantity.of.electricity.sold.or.transferred......ELECSLD_S.,
+    Inventories_Beginning_Year = Total.inventories..beginning.of.year...1.000...INVTOTB.,
+    Inventories_Beginning_Error = Relative.standard.error.for.estimate.of.total.inventories..beginning.of.year......INVTOTB_S.,
+    Finished_Goods_Beginning = Finished.goods.inventories..beginning.of.year...1.000...INVFINB.,
+    Finished_Goods_Beginning_Error = Relative.standard.error.for.estimate.of.finished.goods.inventories..beginning.of.year......INVFINB_S.,
+    Work_In_Process_Beginning = Work.in.process.inventories..beginning.of.year...1.000...INVWIPB.,
+    Work_In_Process_Beginning_Error = Relative.standard.error.for.estimate.of.work.in.process.inventories..beginning.of.year......INVWIPB_S.,
+    Materials_Supplies_Beginning = Materials.and.supplies.inventories..beginning.of.year...1.000...INVMATB.,
+    Materials_Supplies_Beginning_Error = Relative.standard.error.for.estimate.of.materials.and.supplies.inventories..beginning.of.year......INVMATB_S.,
+    Inventories_End_Year = Total.inventories..end.of.year...1.000...INVTOTE.,
+    Inventories_End_Error = Relative.standard.error.for.estimate.of.total.inventories..end.of.year......INVTOTE_S.,
+    Finished_Goods_End = Finished.goods.inventories..end.of.year...1.000...INVFINE.,
+    Finished_Goods_End_Error = Relative.standard.error.for.estimate.of.finished.goods.inventories..end.of.year......INVFINE_S.,
+    Work_In_Process_End = Work.in.process.inventories..end.of.year...1.000...INVWIPE.,
+    Work_In_Process_End_Error = Relative.standard.error.for.estimate.of.work.in.process.inventories..end.of.year......INVWIPE_S.,
+    Materials_Supplies_End = Materials.and.supplies.inventories..end.of.year...1.000...INVMATE.,
+    Materials_Supplies_End_Error = Relative.standard.error.for.estimate.of.materials.and.supplies.inventories..end.of.year.......INVMATE_S.,
+    Total_Capital_Expenditures = Total.capital.expenditures..new.and.used....1.000...CEXTOT.,
+    Capital_Expenditures_Error = Relative.standard.error.for.estimate.of.total.capital.expenditures..new.and.used........CEXTOT_S.,
+    Capital_Buildings = Capital.expenditures.for.buildings.and.other.structures...1.000...CEXBLD.,
+    Capital_Buildings_Error = Relative.standard.error.for.estimate.of.capital.expenditures.for.buildings.and.other.structures......CEXBLD_S.,
+    Capital_Machinery = Capital.expenditures.for.machinery.and.equipment...1.000...CEXMCH.,
+    Capital_Machinery_Error = Relative.standard.error.for.estimate.of.capital.expenditures.for.machinery.and.equipment......CEXMCH_S.,
+    Capital_Automobiles = Capital.expenditures.for.automobiles..trucks..etc..for.highway.use...1.000...CEXMCHA.,
+    Capital_Automobiles_Error = Relative.standard.error.for.estimate.of.capital.expenditures.for.automobiles..trucks..etc..for.highway.use......CEXMCHA_S.,
+    Capital_Computers = Capital.expenditures.for.computers.and.peripheral.data.processing.equipment...1.000...CEXMCHC.,
+    Capital_Computers_Error = Relative.standard.error.for.estimate.of.capital.expenditures.for.computers.and.peripheral.data.processing.equipment.......CEXMCHC_S.,
+    Capital_Other = Capital.expenditures.for.all.other.machinery.and.equipment...1.000...CEXMCHO.,
+    Capital_Other_Error = Relative.standard.error.for.estimate.of.capital.expenditures.for.all.other.machinery.and.equipment......CEXMCHO_S.
+  )
+```
+
+Let's take a look at the ASM data after renaming the variables to see if it
+looks any better.
+```{r asm second glimpse, echo = TRUE}
+glimpse(ASM_data)
+```
+
+We can see that there are letters in some of the cells. Using the notes 
+provided by the original dataset, let's replace those letters with descriptions.
+```{r asm description replacements, echo = TRUE}
+replacements = c(
+  "D" = "Withheld",
+  "N" = "Unavailable",
+  "S" = "Poor Estimate",
+  "X" = "Not Applicable",
+  "A" = "High Error",
+  "r" = "Revised",
+  "s" = "Moderate Error"
+)
+
+ASM_data = ASM_data %>%
+  mutate(across(everything(), ~ ifelse(. %in% names(replacements), replacements[.], .)))
+
+glimpse(ASM_data)
+```
+
+There are some columns that we will not need for our analysis at all, so let's 
+remove them to make the dataset easier to work with.
+```{r asm removing unwanted variables, echo = TRUE}
+ASM_data = ASM_data %>%
+  select(-c(
+    Cost_Fuels_Consumed,
+    Fuels_Consumed_Error,
+    Cost_Electricity,
+    Electricity_Error,
+    Cost_Contract_Work,
+    Contract_Work_Error,
+    Electricity_Purchased_kWh,
+    Electricity_Purchased_Error,
+    Electricity_Generated_kWh,
+    Electricity_Generated_Error,
+    Electricity_Sold_kWh,
+    Electricity_Sold_Error
+  ))
+
+colnames(ASM_data)
+```
+We are also going to drop the NAICS Code column because the description already
+tells us the industry so that row is redundant. 
+```{r asm remove naics code, echo = TRUE}
+ASM_data = ASM_data %>% select(-NAICS_Code)
+```
+
+We are going to split the dataset and keep the relative standard errors all 
+together and replace the symbols with NA so we can do analysis.
+```{r asm split relative error, echo = TRUE}
+asm_relative_error = ASM_data %>% select(ends_with("Error"))
+glimpse(asm_relative_error)
+asm_relative_error = asm_relative_error %>% mutate(across(where(is.character), 
+                          ~ case_when( . %in% c("Withheld","Unavailable",
+"Poor Estimate","Not Applicable", "High Error","Revised", "Moderate Error") ~ NA_real_, 
+  TRUE ~ as.numeric(.))))
+```
+
+
+Checking how many NA's are in the dataset. 
+```{r asm na check 3?, echo = TRUE}
+asm_relative_error %>% summarize_all(~ sum(is.na(.)))
+```
+
+Now looking at the ASM data we see the numerical columns are character we want 
+to change that. 
+1. We are going to remove the relative standard error subscript 
+2. Then mutate across and parse the numbers 
+3. There are warnings because some of the rows had characters in it 
+(specifically withheld) so those values are just replaced by NA's which is fine.
+
+```{r ASM columns from character to numeric, echo = TRUE}
+ASM_data = ASM_data %>% select(!(ends_with("Error")))
+ASM_data = ASM_data %>% mutate(across(.cols = -c(1,2), 
+                                      ~ . %>% str_remove("(s)$") %>% parse_number()))
+glimpse(ASM_data)
+```
+Checking how many NA's are in the "second dataset"
+
+```{r ASM na check 4, echo = TRUE}
+ASM_data %>% summarize_all(~ sum(is.na(.)))
+```
+Writing the data as a csv and storing it as a csv 
+```{r asm csvs, echo = TRUE}
+write_csv(ASM_data, "asm_data.csv")
+write_csv(asm_relative_error, "asm_relative_error.csv")
+```
+
