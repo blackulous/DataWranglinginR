@@ -1,4 +1,4 @@
-## Data Wrangling in R final project
+# Data Wrangling in R final project
 
 **Role** project manager and data analyst.
 - Set deadlines and encouraged the group to complete the tasks required
@@ -6,13 +6,13 @@
 
 **Group members** : Sanjida Rashid and Amna Dar
 
-# Background of the SBA
+## Background of the SBA
 The U.S. Small Business Administration is an independent agency of the United States government that provides support to entrepreneurs and small businesses. The SBA provides loans through banks, credit unions and lenders who partner with the SBA
 
 **Link to Small Business Administration (SBA) data**: https://data.sba.gov/en/dataset/7-a-504-foia/resource/4ad7f0f1-9da6-4d90-8bdb-89a6f821a1a9 
 
  
-# Background of Annual Survey of Manufacturers (ASM)
+## Background of Annual Survey of Manufacturers (ASM)
 Focuses on the manufacturing sector as opposed to the SBA which includes all industries. This dataset gives insight to the manufacturing sector and includes data on expenses, capital expenditures (cost a company obtains to maintain, gain and improve assets) and inventory among other things. There seems to be many variables but that is due to a relative standard error that accompanies each category. For example Total fringe benefits , Relative S.E for total fringe benefits.. 
 
 **Link to Annual Survey of Manufacturers (ASM)**: https://data.census.gov/table/ASMAREA2017.AM1831BASIC03?q=unemployment&g=010XX00US$0400000&n=N0000.00
