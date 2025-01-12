@@ -18,13 +18,13 @@ Focuses on the manufacturing sector as opposed to the SBA which includes all ind
 **Link to Annual Survey of Manufacturers (ASM)**: https://data.census.gov/table/ASMAREA2017.AM1831BASIC03?q=unemployment&g=010XX00US$0400000&n=N0000.00
 
 There also are letters throughout the data the representation of each letter is described below 
-**D** - Withheld to avoid disclosing data of individual companies; data are included in higher level totals
-**N** - Not available or not comparable
-**S** - Estimate does not meet publication standards because of high sampling variability, poor response quality, or other concerns about the estimated quality. Unpublished estimates derived from this table by subtraction are subject to these same limitations and should not be attributed to the U.S. Census Bureau. For a description of publication standards and the total quantity response rate, see link to program methodology page.
-**X** - Not applicable
-**A** - Relative standard error of 100% or more
-**r** - Revised (represented as a superscript)
-**s** - Relative standard error is 40 percent or more and less than 100 percent (data variable displayed as a superscript)
+- **D**: Withheld to avoid disclosing data of individual companies; data are included in higher level totals
+- **N**: Not available or not comparable
+- **S**:  Estimate does not meet publication standards because of high sampling variability, poor response quality, or other concerns about the estimated quality. Unpublished estimates derived from this table by subtraction are subject to these same limitations and should not be attributed to the U.S. Census Bureau. For a description of publication standards and the total quantity response rate, see link to program methodology page.
+- **X**: Not applicable
+- **A**: Relative standard error of 100% or more
+- **r**:  Revised (represented as a superscript)
+- **s**:  Relative standard error is 40 percent or more and less than 100 percent (data variable displayed as a superscript)
  
 
 *The analysis we do is to be taken lightly as there is definitely some bias due to confidentiality within the SBA and AMS data  (some companies may withhold information among other things).*
