@@ -6,9 +6,11 @@
 
 **Group members** : Sanjida Rashid and Amna Dar
 
-**Background of the SBA**: The U.S. Small Business Administration is an independent agency of the United States government that provides support to entrepreneurs and small businesses. The SBA provides loans through banks, credit unions and lenders who partner with the SBA
+# Background of the SBA
+The U.S. Small Business Administration is an independent agency of the United States government that provides support to entrepreneurs and small businesses. The SBA provides loans through banks, credit unions and lenders who partner with the SBA
  
-**Background of Annual Survey of Manufacturers (ASM)**: Focuses on the manufacturing sector as opposed to the SBA which includes all industries. This dataset gives insight to the manufacturing sector and includes data on expenses, capital expenditures (cost a company obtains to maintain, gain and improve assets) and inventory among other things. There seems to be many variables but that is due to a relative standard error that accompanies each category. For example Total fringe benefits , Relative S.E for total fringe benefits.. 
+# Background of Annual Survey of Manufacturers (ASM)
+Focuses on the manufacturing sector as opposed to the SBA which includes all industries. This dataset gives insight to the manufacturing sector and includes data on expenses, capital expenditures (cost a company obtains to maintain, gain and improve assets) and inventory among other things. There seems to be many variables but that is due to a relative standard error that accompanies each category. For example Total fringe benefits , Relative S.E for total fringe benefits.. 
 
 There also are letters throughout the data the representation of each letter is described below 
 **D** - Withheld to avoid disclosing data of individual companies; data are included in higher level totals
