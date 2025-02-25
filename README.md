@@ -1,4 +1,4 @@
-# Data Wrangling in R final project
+
 
 **Role** project manager and data analyst.
 - Set deadlines and encouraged the group to complete the tasks required
