@@ -1,6 +1,6 @@
 # Data Wrangling Final Project 
 
-**Role** project manager and data analyst.
+**Role:** Project Manager and data analyst.
 - Set deadlines and encouraged the group to complete the tasks required
 - Made significant contributions to the data cleaning and data visualizations specifically part 1 of the Final Report.
 
