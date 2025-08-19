@@ -1,8 +1,8 @@
 # Data Wrangling Final Project 
 
 **Role:** Project Manager and data analyst.
-- Set deadlines and encouraged the group to complete the tasks required
-- Made significant contributions to the data cleaning and data visualizations specifically part 1 of the Final Report and data cleaning rmd
+- Set deadlines and encouraged the group to complete the tasks required.
+- Made significant contributions to the data cleaning and data visualizations specifically part 1 of the Final Report and data cleaning rmd.
 
 **Group members** : Sanjida Rashid and Amna Dar
 
